@@ -103,7 +103,7 @@ class ApplyOfficialCuration(dj.Imported):
             if parent_curation_id == -1:
                 # Raw sorting approved as official — no curation to apply. SortedSpikes stays at
                 # curation_id=-1: it still holds the raw sorting and there is no curated analyzer, which
-                # Waveform/SortingQuality would otherwise try to load. The approval itself is recorded
+                # SortingQuality would otherwise try to load. The approval itself is recorded
                 # by OfficialCuration and this ApplyOfficialCuration row.
                 self.insert1(
                     {
@@ -240,7 +240,7 @@ class ApplyOfficialCuration(dj.Imported):
         if current_curation_id == -1:
             logger.info("Deleting old SortedSpikes (curation_id=-1) and downstream tables...")
             (spike_sorting.SortedSpikes & key).delete(prompt=False)
-            # Cascade reaches only SortedSpikes' downstream (Waveform, SortingQuality, SyncedSpikes,
+            # Cascade reaches only SortedSpikes' downstream (SortingQuality, SyncedSpikes,
             # UnitMatching). OfficialCuration and this ApplyOfficialCuration are keyed on
             # PostProcessing, not SortedSpikes, so they survive - which is what lets us record the
             # apply below and then rebuild SortedSpikes separately via SortedSpikes.populate().

@@ -1,8 +1,7 @@
 """04 -- Post-Sorting and Curation
 ================================
 After the SLURM spike sorting job completes, this script:
-  1. Populates post-sorting tables (PostProcessing, SortedSpikes,
-     Waveform, SortingQuality)
+  1. Populates post-sorting tables (PostProcessing, SortedSpikes, SortingQuality)
   2. Verifies sorting results
   3. Runs auto-approval curation (or guides you through manual curation)
 
@@ -12,7 +11,6 @@ on the previous:
     PostProcessing  -- runs SpikeInterface sorting analyzer to compute
                        quality metrics, waveform templates, PCA, etc.
     SortedSpikes    -- loads spike times and unit info into the DB
-    Waveform        -- loads mean waveform templates per unit
     SortingQuality  -- loads per-unit quality metrics (SNR, ISI, etc.)
 
 After post-sorting, curation labels units as good, MUA, or noise.
@@ -51,14 +49,10 @@ def run_post_sorting(experiment_name):
         SortedSpikes    -- loads spike times, unit assignments, and electrode
                            mappings into the database.
                            Depends on: PostProcessing
-        Waveform        -- loads mean waveform templates per unit.
-                           Depends on: SortedSpikes
         SortingQuality  -- loads per-unit quality metrics (SNR, ISI
                            violations, firing rate, etc.).
                            Depends on: SortedSpikes
 
-    Waveform and SortingQuality both depend on SortedSpikes but are
-    independent of each other, so their order does not matter.
     """
     from aeon.dj_pipeline import spike_sorting
 
@@ -80,11 +74,7 @@ def run_post_sorting(experiment_name):
     print("\nPopulating SortedSpikes...")
     spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
 
-    # 3. Waveform -- mean waveform templates per unit.
-    print("\nPopulating Waveform...")
-    spike_sorting.Waveform.populate(display_progress=True, suppress_errors=False)
-
-    # 4. SortingQuality -- per-unit quality metrics.
+    # 3. SortingQuality -- per-unit quality metrics.
     print("\nPopulating SortingQuality...")
     spike_sorting.SortingQuality.populate(display_progress=True, suppress_errors=False)
 
@@ -102,7 +92,6 @@ def verify_sorting(experiment_name):
     sorting_count = len(spike_sorting.SpikeSorting & restriction)
     postproc_count = len(spike_sorting.PostProcessing & restriction)
     sorted_count = len(spike_sorting.SortedSpikes & restriction)
-    waveform_count = len(spike_sorting.Waveform & restriction)
     quality_count = len(spike_sorting.SortingQuality & restriction)
 
     print(f"Pipeline status for '{experiment_name}':")
@@ -111,7 +100,6 @@ def verify_sorting(experiment_name):
     print(f"  SpikeSorting:   {sorting_count} / {preproc_count}")
     print(f"  PostProcessing: {postproc_count} / {sorting_count}")
     print(f"  SortedSpikes:   {sorted_count} / {postproc_count}")
-    print(f"  Waveform:       {waveform_count} / {sorted_count}")
     print(f"  SortingQuality: {quality_count} / {sorted_count}")
 
     if sorted_count > 0:
@@ -120,7 +108,6 @@ def verify_sorting(experiment_name):
 
         for entry in sorted(sorted_entries, key=lambda x: x["block_start"]):
             unit_count = len(spike_sorting.SortedSpikes.Unit & entry)
-            has_waveform = bool(spike_sorting.Waveform & entry)
             has_quality = bool(spike_sorting.SortingQuality & entry)
             status_parts = []
             if has_waveform:
@@ -224,13 +211,12 @@ If you want to review units interactively instead of auto-approving:
        curation.ApplyOfficialCuration.populate(display_progress=True)
 
    NOTE: Applying manual curation DELETES the existing SortedSpikes and all
-   downstream entries (Waveform, SortingQuality, SyncedSpikes). It does NOT
+   downstream entries (SortingQuality, SyncedSpikes). It does NOT
    rebuild them itself - you must re-run the populates below, which reload
    from the curated analyzer (SortedSpikes.make reads the manual quality
    labels + tags off it into unit_quality/UnitTag):
 
        spike_sorting.SortedSpikes.populate(display_progress=True)
-       spike_sorting.Waveform.populate(display_progress=True)
        spike_sorting.SortingQuality.populate(display_progress=True)
        spike_sorting.SyncedSpikes.populate(display_progress=True)
 
