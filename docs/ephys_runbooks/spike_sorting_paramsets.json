@@ -1,0 +1,34 @@
+
+"400": {
+  "save_format": "zarr",
+  "SI_PREPROCESSING_PARAMS": {
+    "si_pipeline": "aeon_default",
+    "save_preprocessed_file": true
+  },
+  "SI_SORTING_PARAMS": {
+      "n_pcs": 3,
+      "do_CAR": false,
+      "keep_good_only": true,
+      "use_binary_file": true,
+  },
+  "SI_POSTPROCESSING_PARAMS": {
+      "extensions": {
+          "random_spikes": {},
+          "waveforms": {},
+          "templates": {},
+          "noise_levels": {},
+          "correlograms": {},
+          "isi_histograms": {},
+          "spike_amplitudes": {},
+          "spike_locations": {},
+          "template_metrics": {},
+          "template_similarity": {},
+          "unit_locations": {},
+          "quality_metrics": {}
+      },
+      "job_kwargs": {"n_jobs": 8, "chunk_duration": "30s"},
+      "export_to_phy": false,
+      "export_report": true
+  }
+}
+}
