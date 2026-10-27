@@ -5,7 +5,6 @@ sorting, postprocessing, exports, and ingestion of sorted units/waveforms.
 """
 
 import importlib
-import json
 import os
 import shutil
 import tempfile
@@ -882,66 +881,6 @@ class SortedSpikes(dj.Imported):
             ]
             if tag_rows:
                 self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
-
-
-@schema
-class SortingQuality(dj.Imported):
-    definition = """
-    -> SortedSpikes
-    """
-
-    class Metric(dj.Part):
-        definition = """  # Quality metrics for a given unit
-        -> master
-        -> SortedSpikes.Unit
-        ---
-        qc_metrics: json
-        """
-
-    def make(self, key):
-        """Extract quality metrics for each unit from sorting analyzer extensions."""
-        import spikeinterface as si
-
-        # registers sorters/preprocessing/exporters submodules on the package
-        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get curation_id from SortedSpikes to determine which analyzer to use
-        curation_id = (SortedSpikes & key).fetch1("curation_id")
-        if curation_id != -1:
-            # Fetch applied analyzer path from database
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            analyzer_output_dir = Path(
-                (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                .fetch1("file")
-                .full_path
-            )
-            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
-        else:
-            analyzer_output_dir = resolve_analyzer_dir(output_dir)
-            logger.info("Using raw analyzer (curation_id=-1)")
-
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
-
-        self.insert1(key)
-
-        qc_metrics = sorting_analyzer.get_extension("quality_metrics").get_data()
-        template_metrics = sorting_analyzer.get_extension("template_metrics").get_data()
-        metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
-
-        for unit_key in (SortedSpikes.Unit & key).keys():
-            unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
-            self.Metric.insert1({**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)})
 
 
 @schema
