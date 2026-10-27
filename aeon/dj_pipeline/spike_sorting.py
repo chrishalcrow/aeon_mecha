@@ -201,8 +201,9 @@ class PreProcessing(dj.Computed):
         # Resolve the preprocessing pipeline first, so a malformed paramset fails before
         # anything is created on disk.
         params = (SortingParamSet & key).fetch1("params")
-        si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
-        save_preprocessed_file = si_pipeline.get("save_preprocessed_file", True)
+        si_preprocessing_params = params.get("SI_PREPROCESSING_PARAMS")
+        si_pipeline = resolve_preprocessing_pipeline(si_preprocessing_params or {})
+        save_preprocessed_file = si_preprocessing_params.get("save_preprocessed_file", True)
 
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
