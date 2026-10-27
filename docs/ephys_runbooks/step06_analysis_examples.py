@@ -363,9 +363,6 @@ def fetch_behavioral_events(experiment_name):
 #   - Aggregate across blocks using GlobalUnit:
 #       (spike_sorting.GlobalUnit * spike_sorting.UnitMatching.Spikes
 #        & restriction)
-#   - Filter units by quality metrics:
-#       good_units = (spike_sorting.SortingQuality.Unit
-#                     & "snr > 5" & "isi_violations_ratio < 0.01")
 #
 # SpikeInterface documentation:
 #   - https://spikeinterface.readthedocs.io/
