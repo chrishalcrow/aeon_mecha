@@ -202,7 +202,7 @@ class PreProcessing(dj.Computed):
         # anything is created on disk.
         params = (SortingParamSet & key).fetch1("params")
         si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
-        save_preprocessed_file = params.get("save_preprocessed_file", True)
+        save_preprocessed_file = si_pipeline.get("save_preprocessed_file", True)
 
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
