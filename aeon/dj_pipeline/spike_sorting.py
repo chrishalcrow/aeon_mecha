@@ -202,6 +202,7 @@ class PreProcessing(dj.Computed):
         # anything is created on disk.
         params = (SortingParamSet & key).fetch1("params")
         si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
+        save_preprocessed_file = params.get("SAVE_PREPROCESSED_FILE", True)
 
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
@@ -263,6 +264,7 @@ class PreProcessing(dj.Computed):
             recording_dir,
             params,
             si_pipeline,
+            save_preprocessed_file,
         )
 
     def make_compute(
@@ -280,6 +282,7 @@ class PreProcessing(dj.Computed):
         recording_dir: Path,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
+        save_preprocessed_file: bool,
     ) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
 
@@ -299,6 +302,7 @@ class PreProcessing(dj.Computed):
             recording_dir: Directory for recording files
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
+            save_preprocessed_file: bool, whether or not to save a preprocessed file
 
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
@@ -308,7 +312,6 @@ class PreProcessing(dj.Computed):
 
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
-        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
@@ -355,10 +358,10 @@ class PreProcessing(dj.Computed):
         si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, si_pipeline)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        save_format = params.get("save_format", "zarr")
+        save_format = params.get("save_format", "binary")
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
-        # zarr time-axis chunk size of the preprocessed recording.zarr intermediate.
+        # time-axis chunk size of the preprocessed recording intermediate.
         job_kwargs = fork_safe_job_kwargs("30s")
 
         # The large, regenerable intermediate lives on scratch (non-backed-up), mirroring
@@ -366,33 +369,25 @@ class PreProcessing(dj.Computed):
         intermediate_dir = scratch_recording_dir(recording_file.parent)
         intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-        if save_format == "zarr":
-            zarr_path = intermediate_dir / "recording.zarr"
-            if zarr_path.exists():
-                logger.info(f"{zarr_path} already exists. Skipping zarr write.")
-            else:
-                strip_non_numeric_properties(si_recording)
-                logger.info(f"Writing zarr recording to {zarr_path}...")
-                si_recording.save(
-                    format="zarr",
-                    folder=zarr_path,
-                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
-                )
+        rec_path = intermediate_dir / "recording"
+        if rec_path.exists():
+            saved_rec = si.load(rec_path)
+
+            if saved_rec.get_num_samples() == si_recording.get_num_samples():
+                logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
+                return output_dir, execution_time, recording_dir
+
+        strip_non_numeric_properties(si_recording)
+        logger.info(f"Writing recording to {rec_path}...")
+        if save_preprocessed_file:
+            si_recording.save(
+                format=save_format,
+                folder=rec_path,
+                overwrite=True,
+                **job_kwargs,
+            )
         else:
-            binary_file_path = intermediate_dir / "recording.dat"
-            if binary_file_path.exists():
-                load_and_verify_binary_file(
-                    binary_file_path=binary_file_path, se_recording_obj=si_recording
-                )
-                logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
-            else:
-                logger.info(f"Writing binary recording to {binary_file_path}...")
-                si.core.write_binary_recording(
-                    recording=si_recording,
-                    file_paths=[binary_file_path],
-                    dtype="int16",
-                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
-                )
+            si_recording.dump_to_json(rec_path)
 
         return output_dir, execution_time, recording_dir
 
@@ -496,43 +491,20 @@ class SpikeSorting(dj.Computed):
                 f"Sorting output directory already contains data: {sorting_output_dir}. "
                 "Refusing to overwrite existing sorting data."
             )
-        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
 
-        save_format = params.get("save_format", "zarr")
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
         if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
             sorting_params["clear_cache"] = True
 
         if sorting_method == "kilosort4":
-            # Kilosort4 needs a flat binary file, so SpikeInterface first converts
-            # recording.zarr to recording.dat. Its default settings (1 worker, 1 s chunks)
-            # make this slow: each 1 s written re-reads a whole 30 s zarr chunk, and a 30 h
-            # block took 3-4.5 h. So use the settings PreProcessing wrote the zarr with.
-            # Values in the paramset still win, except n_jobs: it follows the job's CPU
-            # allocation, and a paramset n_jobs can only lower it.
+            # If we write a binary file before sorting, we set the job_kwargs so that
+            # the chunk size is large (optimized for big RAM).
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
-            sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
+            sorting_params = {**job_kwargs, **sorting_params}
 
         intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
-        if save_format == "zarr":
-            zarr_path = intermediate_dir / "recording.zarr"
-            if not zarr_path.exists():
-                raise FileNotFoundError(
-                    f"Preprocessed recording missing at {zarr_path}. It is deleted after a "
-                    "successful sort; to re-sort, delete this block's PreProcessing entry "
-                    "(cascades to SpikeSorting) and re-populate it."
-                )
-            recording_for_sorting = si.load(zarr_path)
-        else:
-            binary_file_path = intermediate_dir / "recording.dat"
-            recording_for_sorting = load_and_verify_binary_file(
-                binary_file_path=binary_file_path, se_recording_obj=si_recording
-            )
-            if not recording_for_sorting.binary_compatible_with(
-                dtype="int16", time_axis=0, file_paths_length=1
-            ):
-                raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
+        recording_for_sorting = si.load(intermediate_dir)
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,

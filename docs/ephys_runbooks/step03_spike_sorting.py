@@ -40,13 +40,15 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # (none at module level -- all imports are deferred inside functions
 # to avoid DB side effects when the module is imported)
 
+import json
+
 # --------------------------------------------------------------------------
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
 EXPERIMENT_NAME = "abcGolden01-aeonx1"
 SUBJECT = "IAA-1147881"
-PARAMSET_ID = 400
+PARAMSET_ID = "400"
 SORTING_METHOD = "kilosort4"
 
 # How to group channels for spike sorting. Options:
@@ -58,6 +60,8 @@ SORTING_GROUPS = "per_shank"
 # Probe insertion to set up sorting for, or None for every insertion.
 INSERTION_NUMBER = None
 
+with open("docs/ephys_runbooks/spike_sorting_paramsets.json") as f:
+    spike_sorting_paramsets = json.load(f)
 
 # --------------------------------------------------------------------------
 # Functions
@@ -129,53 +133,7 @@ def setup_sorting_prerequisites(
     paramset_id_str = str(paramset_id)
 
     if not (spike_sorting.SortingParamSet & {"paramset_id": paramset_id_str}):
-        params = {
-            # Storage format for recording, sorting output, and analyzer
-            # ("zarr" or "binary"). Defaults to "zarr" if omitted.
-            "save_format": "zarr",
-            # PreProcessing step. "si_pipeline" is a registered pipeline name or a
-            # SpikeInterface pipeline dict written inline. "aeon_default" (bandpass
-            # 300-6000 Hz + median common average referencing) is used if omitted;
-            # "none" passes the recording through. See
-            # aeon/dj_pipeline/utils/ephys_preprocessing.py.
-            "SI_PREPROCESSING_PARAMS": {"si_pipeline": "aeon_default"},
-            #
-            # Parameters passed to SpikeInterface's run_sorter().
-            "SI_SORTING_PARAMS": {
-                "n_pcs": 3,
-                "do_CAR": False,
-                "keep_good_only": True,
-                "use_binary_file": True,
-            },
-            # Post-sorting analysis: which SpikeInterface extensions to compute
-            # and their parameters. These generate quality metrics, waveform
-            # templates, spike amplitudes, etc.
-            "SI_POSTPROCESSING_PARAMS": {
-                "extensions": {
-                    "random_spikes": {},
-                    "waveforms": {},
-                    "templates": {},
-                    "noise_levels": {},
-                    "correlograms": {},
-                    "isi_histograms": {},
-                    "principal_components": {
-                        "n_components": 5,
-                        "mode": "by_channel_local",
-                    },
-                    "spike_amplitudes": {},
-                    "spike_locations": {},
-                    "template_metrics": {
-                        "include_multi_channel_metrics": True,
-                    },
-                    "template_similarity": {},
-                    "unit_locations": {},
-                    "quality_metrics": {},
-                },
-                "job_kwargs": {"n_jobs": -1, "chunk_duration": "10s"},
-                "export_to_phy": False,
-                "export_report": True,
-            },
-        }
+        params = spike_sorting_paramsets[paramset_id_str]
         spike_sorting.SortingParamSet.insert1(
             {
                 "paramset_id": paramset_id_str,
