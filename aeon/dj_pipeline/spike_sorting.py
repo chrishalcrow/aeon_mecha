@@ -214,9 +214,7 @@ class PreProcessing(dj.Computed):
             )
         # Create output directory
         output_dir = self.infer_output_dir(key, mkdir=True)
-        recording_dir = output_dir.parent / "recording"
-        recording_dir.mkdir(parents=True, exist_ok=True)
-        recording_file = recording_dir / "si_recording.pkl"
+        recording_file = output_dir / "si_recording.pkl"
 
         # Load ephys data
         ephys_files, dir_types = (
@@ -262,7 +260,6 @@ class PreProcessing(dj.Computed):
             offset_to_uV,
             output_dir,
             recording_file,
-            recording_dir,
             params,
             si_pipeline,
             save_preprocessed_file,
@@ -280,11 +277,10 @@ class PreProcessing(dj.Computed):
         offset_to_uV: float,
         output_dir: Path,
         recording_file: Path,
-        recording_dir: Path,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
         save_preprocessed_file: bool,
-    ) -> tuple[Path, datetime, Path]:
+    ) -> tuple[Path, datetime]:
         """Preprocess ephys data for spike sorting.
 
         Performs data concatenation, channel selection, filtering, and probe setup.
@@ -300,7 +296,6 @@ class PreProcessing(dj.Computed):
             offset_to_uV: Offset conversion factor
             output_dir: Output directory path
             recording_file: Path to save recording object
-            recording_dir: Directory for recording files
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
             save_preprocessed_file: bool, whether or not to save a preprocessed file
@@ -367,7 +362,7 @@ class PreProcessing(dj.Computed):
 
         # The large, regenerable intermediate lives on scratch (non-backed-up), mirroring
         # the ceph sub-path; si_recording.pkl above stays on ceph with the DB-tracked outputs.
-        intermediate_dir = scratch_recording_dir(recording_file.parent)
+        intermediate_dir = scratch_recording_dir(output_dir)
         intermediate_dir.mkdir(parents=True, exist_ok=True)
 
         rec_path = intermediate_dir / "recording"
@@ -376,7 +371,7 @@ class PreProcessing(dj.Computed):
                 saved_rec = si.load(rec_path)
                 if saved_rec.get_num_samples() == si_recording.get_num_samples():
                     logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
-                    return output_dir, execution_time, recording_dir
+                    return output_dir, execution_time
             except Exception as e:
                 logger.info(f"Could not load {rec_path}: {e}.")
 
@@ -392,9 +387,9 @@ class PreProcessing(dj.Computed):
         else:
             si_recording.dump_to_json(rec_path)
 
-        return output_dir, execution_time, recording_dir
+        return output_dir, execution_time
 
-    def make_insert(self, key, output_dir, execution_time, recording_dir):
+    def make_insert(self, key, output_dir, execution_time):
         """Insert preprocessing results into the database, including file references."""
         self.insert1(
             {
@@ -406,11 +401,9 @@ class PreProcessing(dj.Computed):
         )
         self.File.insert(
             [
-                {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
-                for f in recording_dir.rglob("*")
+                {**key, "file_name": f.relative_to(output_dir).as_posix(), "file": f}
+                for f in output_dir.rglob("*")
                 if f.is_file()
-                and f.name != "recording.dat"
-                and not f.is_relative_to(recording_dir / "recording.zarr")
             ]
         )
 
@@ -439,19 +432,11 @@ class SpikeSorting(dj.Computed):
         sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        try:
-            recording_file = Path(
-                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
-            )
-        except dj.errors.DataJointError:
-            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
-
-        return recording_file, output_dir, params, sorting_method
+        return output_dir, params, sorting_method
 
     def make_compute(
         self,
         key: dict[str, Any],
-        recording_file: Path,
         output_dir: Path,
         params: dict[str, Any],
         sorting_method: str,
@@ -506,8 +491,12 @@ class SpikeSorting(dj.Computed):
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
             sorting_params = {**job_kwargs, **sorting_params}
 
-        intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
-        recording_for_sorting = si.load(intermediate_dir)
+        intermediate_dir = scratch_recording_dir(output_dir)
+
+        # path could be `.zarr` a binary folder or a `.json file`
+        recording_path = intermediate_dir.glob("recording*")
+
+        recording_for_sorting = si.load(recording_path)
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
