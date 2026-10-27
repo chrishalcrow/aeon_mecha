@@ -51,7 +51,7 @@ _PREPROCESSING_PIPELINES: dict[str, PipelineDict] = {}
 DEFAULT_PREPROCESSING_PIPELINE = "aeon_default"
 
 # Keys allowed in a paramset's SI_PREPROCESSING_PARAMS section.
-_PREPROCESSING_PARAMS_KEYS = {"si_pipeline", "save_preprocessing_file"}
+_PREPROCESSING_PARAMS_KEYS = {"si_pipeline", "save_preprocessed_file"}
 
 
 def register_preprocessing(name: str, pipeline: PipelineDict) -> None:
