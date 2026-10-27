@@ -372,11 +372,13 @@ class PreProcessing(dj.Computed):
 
         rec_path = intermediate_dir / "recording"
         if rec_path.exists():
-            saved_rec = si.load(rec_path)
-
-            if saved_rec.get_num_samples() == si_recording.get_num_samples():
-                logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
-                return output_dir, execution_time, recording_dir
+            try:
+                saved_rec = si.load(rec_path)
+                if saved_rec.get_num_samples() == si_recording.get_num_samples():
+                    logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
+                    return output_dir, execution_time, recording_dir
+            except Exception as e:
+                logger.info(f"Could not load {rec_path}: {e}.")
 
         strip_non_numeric_properties(si_recording)
         logger.info(f"Writing recording to {rec_path}...")
