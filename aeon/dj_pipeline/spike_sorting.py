@@ -212,9 +212,7 @@ class PreProcessing(dj.Computed):
             )
         # Create output directory
         output_dir = self.infer_output_dir(key, mkdir=True)
-        recording_dir = output_dir.parent / "recording"
-        recording_dir.mkdir(parents=True, exist_ok=True)
-        recording_file = recording_dir / "si_recording.pkl"
+        recording_file = output_dir / "si_recording.pkl"
 
         # Load ephys data
         ephys_files, dir_types = (
@@ -253,7 +251,6 @@ class PreProcessing(dj.Computed):
             offset_to_uV,
             output_dir,
             recording_file,
-            recording_dir,
             params,
             si_pipeline,
         )
@@ -292,7 +289,7 @@ class PreProcessing(dj.Computed):
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
-            Tuple of (output_dir, execution_time, recording_dir)
+            Tuple of (output_dir, execution_time)
         """
         import probeinterface as pi
         import spikeinterface as si
