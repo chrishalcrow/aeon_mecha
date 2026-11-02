@@ -423,7 +423,6 @@ class SpikeSorting(dj.Computed):
     def make_compute(
         self,
         key: dict[str, Any],
-        recording_file: Path,
         output_dir: Path,
         params: dict[str, Any],
         sorting_method: str,
@@ -432,7 +431,6 @@ class SpikeSorting(dj.Computed):
 
         Args:
             key: Sorting task key
-            recording_file: Path to preprocessed recording
             output_dir: Base output directory
             params: Sorting parameters dictionary
             sorting_method: Name of sorting algorithm (e.g., kilosort2)
