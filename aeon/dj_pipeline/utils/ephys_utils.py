@@ -14,6 +14,10 @@ import datajoint as dj
 import numpy as np
 import pyarrow.dataset as ds
 
+# Neuropixels 2.0 sampling rate - TODO: read this from the metadata
+NP2_FS_HZ = 30e3
+
+
 logger = dj.logger
 
 # Mapping from device directory name to probe_type
@@ -105,12 +109,29 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
 
 
+def get_num_samples(ephys_file: Path) -> int:
+    """Returns the number of samples from an ephys file path."""
+    if ephys_file.suffix == ".arrow":
+        # for an arrow file, the fastest way to read it to load a single column and compute its length.
+        # In any non-corrupt arrow file, all columns have the same length
+        clock_array = read_onix_ts(ephys_file)
+        num_samples = len(clock_array)
+    else:
+        # every binary recording we saved has 384 channels. Currently each chunk is unaware of its
+        # corresponding probe, so we cannot read the number of channels easily
+        num_channels = 384
+        num_samples = read_amplifier_recording(ephys_file, NP2_FS_HZ, num_channels).get_num_samples()
+
+    return num_samples
+
+
 def read_amplifier_recording(
     raw_bin_path: Path,
-    num_channels: int,
     fs_hz: float,
+    num_channels: int | None = None,
     gain_to_uV: float = 1.0,
     offset_to_uV: float = 0.0,
+    num_samples: int | None = None,
 ):
     """Read an AmplifierData file as a SpikeInterface recording.
 
@@ -138,6 +159,9 @@ def read_amplifier_recording(
             gain_to_uV=gain_to_uV,
             offset_to_uV=offset_to_uV,
         )
+        # Since we've precomputed the num samples, we attach this metadata
+        # to the recording.
+        rec._segments[0]._num_samples = num_samples
         return rec
     return se.read_binary(
         resolved,
