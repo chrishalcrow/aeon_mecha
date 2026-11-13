@@ -607,7 +607,7 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            if ephys_file.suffix == "arrow":
+            if ephys_file.suffix == ".arrow":
                 from pyarrow import ArrowInvalid
 
                 from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
@@ -624,7 +624,7 @@ class EphysChunk(dj.Manual):
                         ephys_processed_path
                         / experiment_name
                         / insertion_key["subject"]
-                        / insertion_key["insertion_number"]
+                        / str(insertion_key["insertion_number"])
                         / "recovered_ephys_chunks"
                         / Path(*ephys_file.parts[-3:])
                     )
