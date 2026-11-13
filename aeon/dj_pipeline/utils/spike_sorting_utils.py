@@ -305,7 +305,7 @@ except ModuleNotFoundError:
     warnings.warn("SpikeInterface is not installed", stacklevel=2)
 
 
-def create_uncorrupted_arrow_file(corrupted_filepath: str | Path, fixed_filepath: str | Path) -> bool:
+def create_uncorrupted_arrow_file(corrupted_filepath: Path, fixed_filepath: Path) -> bool:
     """Creates a valid arrow file from a corrupted one.
 
     When the acquisition system fails suddenly, the arrow files generated do not produce a footer and cannot
@@ -316,7 +316,7 @@ def create_uncorrupted_arrow_file(corrupted_filepath: str | Path, fixed_filepath
 
     recovered_batches = []
 
-    with pa.OSFile(corrupted_filepath, "rb") as f:
+    with pa.OSFile(str(corrupted_filepath), "rb") as f:
         # Arrow Files begin with a 6-byte magic word + 2 bytes padding, which we skip
         f.seek(8)
 
@@ -330,12 +330,13 @@ def create_uncorrupted_arrow_file(corrupted_filepath: str | Path, fixed_filepath
             try:
                 batch = reader.read_next_batch()
                 recovered_batches.append(batch)
-            except OSError:
+            except (OSError, StopIteration):
                 # This is the corrupted chunk where the system crashed
                 break
 
     if recovered_batches:
-        with pa.OSFile(fixed_filepath, "wb") as sink:
+        with pa.OSFile(str(fixed_filepath), "wb") as sink:
+            fixed_filepath.parent.mkdir(parents=True, exist_ok=True)
             with pa.ipc.new_file(sink, schema) as writer:
                 for batch in recovered_batches:
                     writer.write_batch(batch)
