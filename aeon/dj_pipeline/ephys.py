@@ -481,7 +481,7 @@ class EphysChunk(dj.Manual):
     ---
     -> EphysEpoch
     chunk_end: datetime(6)                 # HARP clock
-    num_samples=null: int64
+    ephys_num_samples=null: int64          # number of time samples in the ephys file
     """
     # ElectrodeConfig is derivable via EphysEpochConfig.Insertion (joined on
     # experiment_name + epoch_start + subject + insertion_number).
@@ -668,7 +668,7 @@ class EphysChunk(dj.Manual):
                 "chunk_start": chunk_start,
                 "chunk_end": chunk_end,
                 "epoch_start": epoch_start,
-                "num_samples": num_samples,
+                "ephys_num_samples": num_samples,
             }
             try:
                 with cls.connection.transaction:

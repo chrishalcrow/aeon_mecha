@@ -112,8 +112,8 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
 def get_num_samples(ephys_file: Path) -> int:
     """Returns the number of samples from an ephys file path."""
     if ephys_file.suffix == ".arrow":
-        # for an arrow file, the fastest way to read it to load a single column and compute its length.
-        # In any non-corrupt arrow file, all columns have the same length
+        # for an arrow file, the fastest way to find the number of samples is to load a single column and
+        # compute its length. In any non-corrupt arrow file, all columns have the same length
         clock_array = read_onix_ts(ephys_file)
         num_samples = len(clock_array)
     else:
@@ -161,7 +161,8 @@ def read_amplifier_recording(
         )
         # Since we've precomputed the num samples, we attach this metadata
         # to the recording.
-        rec._segments[0]._num_samples = num_samples
+        if num_samples:
+            rec._segments[0]._num_samples = num_samples
         return rec
     return se.read_binary(
         resolved,

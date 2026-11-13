@@ -232,7 +232,7 @@ class PreProcessing(dj.Computed):
                 & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
             )
             .proj("num_samples")
-            .to_arrays("file_path", "directory_type", "num_samples", order_by="chunk_start")
+            .to_arrays("file_path", "directory_type", "ephys_num_samples", order_by="chunk_start")
         )
 
         # Channels
