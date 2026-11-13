@@ -159,8 +159,7 @@ def read_amplifier_recording(
             gain_to_uV=gain_to_uV,
             offset_to_uV=offset_to_uV,
         )
-        # Since we've precomputed the num samples, we attach this metadata
-        # to the recording.
+        # If we've precomputed the num samples, attach to the recording
         if num_samples:
             rec._segments[0]._num_samples = num_samples
         return rec
