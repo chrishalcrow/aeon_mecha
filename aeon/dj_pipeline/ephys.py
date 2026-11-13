@@ -525,6 +525,7 @@ class EphysChunk(dj.Manual):
         if resolved is None:
             return
         raw_dir, epoch_dir_to_start = resolved
+        ephys_processed_path = get_sorting_root_dir()
 
         exp_key = {"experiment_name": experiment_name}
 
@@ -619,7 +620,7 @@ class EphysChunk(dj.Manual):
                     from aeon.dj_pipeline.utils.spike_sorting_utils import create_uncorrupted_arrow_file
 
                     logger.warning("Cannot read arrow file. Attempting reconstruction.")
-                    ephys_processed_path = get_sorting_root_dir()
+
                     fixed_filepath = (
                         ephys_processed_path
                         / experiment_name
@@ -700,18 +701,33 @@ class EphysChunk(dj.Manual):
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
                     file_list = set((ephys_file, clock_file))
-                    cls.File.insert(
-                        [
-                            {
-                                **chunk_entry,
-                                "directory_type": "raw-ephys",
-                                "file_name": f.name,
-                                "file_path": f.relative_to(raw_dir).as_posix(),
-                            }
-                            for f in file_list
-                        ],
-                        ignore_extra_fields=True,
-                    )
+                    if ephys_file.is_relative_to(raw_dir):
+                        cls.File.insert(
+                            [
+                                {
+                                    **chunk_entry,
+                                    "directory_type": "raw-ephys",
+                                    "file_name": f.name,
+                                    "file_path": f.relative_to(raw_dir).as_posix(),
+                                }
+                                for f in file_list
+                            ],
+                            ignore_extra_fields=True,
+                        )
+                    else:
+                        cls.File.insert(
+                            [
+                                {
+                                    **chunk_entry,
+                                    "directory_type": "processed",
+                                    "file_name": f.name,
+                                    "file_path": f.relative_to(ephys_processed_path).as_posix(),
+                                }
+                                for f in file_list
+                            ],
+                            ignore_extra_fields=True,
+                        )
+
                     cls.SyncModel.insert(
                         [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
                         ignore_extra_fields=True,
