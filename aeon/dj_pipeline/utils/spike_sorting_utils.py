@@ -335,8 +335,8 @@ def create_uncorrupted_arrow_file(corrupted_filepath: Path, fixed_filepath: Path
                 break
 
     if recovered_batches:
+        fixed_filepath.parent.mkdir(parents=True, exist_ok=True)
         with pa.OSFile(str(fixed_filepath), "wb") as sink:
-            fixed_filepath.parent.mkdir(parents=True, exist_ok=True)
             with pa.ipc.new_file(sink, schema) as writer:
                 for batch in recovered_batches:
                     writer.write_batch(batch)
