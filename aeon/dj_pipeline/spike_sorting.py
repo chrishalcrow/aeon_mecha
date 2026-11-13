@@ -281,7 +281,7 @@ class PreProcessing(dj.Computed):
         fs_hz: float,
         gain_to_uV: float,
         offset_to_uV: float,
-        num_samples_per_chunk: list[int],
+        num_samples_per_chunk: list[int | None],
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
