@@ -28,6 +28,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
 from aeon.dj_pipeline.utils.ephys_utils import (
     create_probe_type as _create_probe_type,
 )
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 
 schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
@@ -605,6 +606,36 @@ class EphysChunk(dj.Manual):
                     f"manual ProbeInsertion insert, then run EphysEpochConfig.populate()."
                 )
                 continue
+
+            if ephys_file.suffix == "arrow":
+                from pyarrow import ArrowInvalid
+
+                from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+                try:
+                    # todo: remove `num_channels` if it becomes optional
+                    _ = read_amplifier_recording(ephys_file, fs_hz=30_000, num_channels=384)
+                except ArrowInvalid:
+                    from aeon.dj_pipeline.utils.spike_sorting_utils import create_uncorrupted_arrow_file
+
+                    logger.warning("Cannot read arrow file. Attempting reconstruction.")
+                    ephys_processed_path = get_sorting_root_dir()
+                    fixed_filepath = (
+                        ephys_processed_path
+                        / experiment_name
+                        / insertion_key["subject"]
+                        / insertion_key["insertion_number"]
+                        / "recovered_ephys_chunks"
+                        / Path(*ephys_file.parts[-3:])
+                    )
+                    successful_creation = create_uncorrupted_arrow_file(
+                        corrupted_filepath=ephys_file, fixed_filepath=fixed_filepath
+                    )
+
+                    if successful_creation:
+                        ephys_file = fixed_filepath
+                    else:
+                        continue
 
             # Read ONIX timestamps from the companion Clock binary
             clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
