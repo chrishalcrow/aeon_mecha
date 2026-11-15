@@ -602,35 +602,32 @@ class PostProcessing(dj.Computed):
         analyzer_output_dir = output_dir / analyzer_name
 
         if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
-            raise FileExistsError(
-                f"Sorting analyzer directory already contains data: {analyzer_output_dir}. "
-                "Refusing to overwrite existing sorting data."
+            sorting_analyzer = si.load_sorting_analyzer(analyzer_output_dir)
+        else:
+            if si_sorting.unit_ids.size == 0:
+                logger.info("No units found in sorting object. Skipping sorting analyzer.")
+                analyzer_output_dir.mkdir(parents=True, exist_ok=True)
+                execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+                return analyzer_output_dir, output_dir, execution_time, execution_duration
+
+            sorting_analyzer = si.create_sorting_analyzer(
+                sorting=si_sorting,
+                recording=si_recording,
+                format=analyzer_format,
+                folder=analyzer_output_dir,
+                sparse=True,
+                overwrite=True,
+                **job_kwargs,
             )
 
-        if si_sorting.unit_ids.size == 0:
-            logger.info("No units found in sorting object. Skipping sorting analyzer.")
-            analyzer_output_dir.mkdir(parents=True, exist_ok=True)
-            execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-            return analyzer_output_dir, output_dir, execution_time, execution_duration
-
-        sorting_analyzer = si.create_sorting_analyzer(
-            sorting=si_sorting,
-            recording=si_recording,
-            format=analyzer_format,
-            folder=analyzer_output_dir,
-            sparse=True,
-            overwrite=True,
-            **job_kwargs,
-        )
-
-        # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
-        # each extension is parameterized by params specified in extensions_params dictionary
-        # (skip if not specified)
+        # Don't re-compute any extensions that already exist. This prevents us
+        # from recomputing expensive extensions if our previous job was
+        # interrupted
         extensions_params = postprocessing_params.get("extensions", {})
         extensions_to_compute = {
-            ext_name: extensions_params[ext_name]
-            for ext_name in sorting_analyzer.get_computable_extensions()
-            if ext_name in extensions_params
+            ext_name: extensions_kwargs
+            for ext_name, extensions_kwargs in extensions_params.items()
+            if ext_name not in sorting_analyzer.get_saved_extension_names()
         }
 
         sorting_analyzer.compute(extensions_to_compute, **job_kwargs)
