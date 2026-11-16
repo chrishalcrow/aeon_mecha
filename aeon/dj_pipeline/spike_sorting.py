@@ -578,10 +578,7 @@ class PostProcessing(dj.Computed):
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
-        import spikeinterface as si
-
-        # registers sorters/preprocessing/exporters submodules on the package
-        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
+        import spikeinterface.full as si
 
         execution_time = datetime.now(UTC)
 
