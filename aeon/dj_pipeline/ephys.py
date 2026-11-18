@@ -16,6 +16,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     discover_epoch_probes,
     find_nearest_window,
     find_or_create_probe_insertion,
+    get_num_samples,
     get_probe_id,
     harp_to_naive,
     load_device_channel_map,
@@ -485,6 +486,7 @@ class EphysChunk(dj.Manual):
     ---
     -> EphysEpoch
     chunk_end: datetime(6)                 # HARP clock
+    ephys_num_samples=null: int64          # number of time samples in the ephys file
     """
     # ElectrodeConfig is derivable via EphysEpochConfig.Insertion (joined on
     # experiment_name + epoch_start + subject + insertion_number).
@@ -697,6 +699,8 @@ class EphysChunk(dj.Manual):
                     logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
                     continue
 
+            num_samples = get_num_samples(ephys_file)
+
             # ElectrodeConfig already resolved on the Insertion row — read it
             # directly from insertion_key (built above from EphysEpochConfig.Insertion).
             chunk_entry = {
@@ -704,6 +708,7 @@ class EphysChunk(dj.Manual):
                 "chunk_start": chunk_start,
                 "chunk_end": chunk_end,
                 "epoch_start": epoch_start,
+                "ephys_num_samples": num_samples,
             }
             try:
                 with cls.connection.transaction:
