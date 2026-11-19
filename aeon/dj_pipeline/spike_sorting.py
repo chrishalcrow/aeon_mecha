@@ -368,20 +368,21 @@ class PreProcessing(dj.Computed):
 
         rec_path = intermediate_dir / "recording"
 
-        # path could be `.zarr` a binary folder
+        # path could be a `.zarr` or a binary folder
         existing_rec_paths = list(intermediate_dir.glob("recording*"))
-        if len(existing_rec_paths) == 1:
-            try:
-                saved_rec = si.load(existing_rec_paths[0])
-                if saved_rec and saved_rec.get_num_samples() == si_recording.get_num_samples():
-                    logger.info(
-                        f"{existing_rec_paths} already exists and has the right size. Skipping write."
-                    )
-                    return output_dir, execution_time
-            except UnboundLocalError:
-                logger.info(f"{existing_rec_paths[0]} cannot be loaded. Overwriting.")
-        elif len(existing_rec_paths) > 1:
+
+        if len(existing_rec_paths) > 1:
             raise ValueError(f"Found several recording files in {intermediate_dir}. Expecting zero or one.")
+        if existing_rec_paths:
+            existing_rec_path = existing_rec_paths[0]
+            try:
+                saved_num_samples = si.load(existing_rec_path).get_num_samples()
+            except Exception as e:
+                logger.warning(f"Could not load {existing_rec_path} ({e}). Rewriting it.")
+                saved_num_samples = None
+            if saved_num_samples == si_recording.get_num_samples():
+                logger.info(f"{existing_rec_path} already exists and has the right size. Skipping write.")
+                return output_dir, execution_time
 
         if save_format == "zarr":
             strip_non_numeric_properties(si_recording)
@@ -500,11 +501,11 @@ class SpikeSorting(dj.Computed):
             # Values in the paramset still win, except n_jobs: it follows the job's CPU
             # allocation, and a paramset n_jobs can only lower it.
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
-            sorting_params = {**job_kwargs, **sorting_params}
+            sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
 
         intermediate_dir = scratch_recording_dir(output_dir)
 
-        # path could be `.zarr` a binary folder
+        # path could be a `.zarr` or a binary folder
         recording_path = list(intermediate_dir.glob("recording*"))[0]
 
         recording_for_sorting = si.load(recording_path)
@@ -599,9 +600,13 @@ class PostProcessing(dj.Computed):
         intermediate_dir = scratch_recording_dir(output_dir)
         recording_path = list(intermediate_dir.glob("recording*"))[0]
 
-        si_recording = si.load(recording_path)
+        # The recording pickle contains all provenance, and we want this attached to the analyzer.
+        # But this loads and applies the preprocessing lazily => is slow
+        si_recording = si.load(output_dir / "si_recording.pkl", base_folder=output_dir)
+        # The cached recording is already preprocessed => much faster for postprocessing
+        cached_recording = si.load(recording_path)
 
-        si_sorting = si.read_sorter_folder(sorting_file.parent, register_recording=False)
+        si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
@@ -617,24 +622,24 @@ class PostProcessing(dj.Computed):
         analyzer_name = "sorting_analyzer.zarr" if save_format == "zarr" else "sorting_analyzer"
         analyzer_output_dir = output_dir / analyzer_name
 
-        if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
-            sorting_analyzer = si.load_sorting_analyzer(analyzer_output_dir)
-        else:
-            if si_sorting.unit_ids.size == 0:
-                logger.info("No units found in sorting object. Skipping sorting analyzer.")
-                analyzer_output_dir.mkdir(parents=True, exist_ok=True)
-                execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-                return analyzer_output_dir, output_dir, execution_time, execution_duration
+        if si_sorting.unit_ids.size == 0:
+            logger.info("No units found in sorting object. Skipping sorting analyzer.")
+            analyzer_output_dir.mkdir(parents=True, exist_ok=True)
+            execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+            return analyzer_output_dir, output_dir, execution_time, execution_duration
 
-            sorting_analyzer = si.create_sorting_analyzer(
-                sorting=si_sorting,
-                recording=si_recording,
-                format=analyzer_format,
-                folder=analyzer_output_dir,
-                sparse=True,
-                overwrite=True,
-                **job_kwargs,
-            )
+        sorting_analyzer = si.create_sorting_analyzer(
+            sorting=si_sorting,
+            recording=si_recording,
+            format=analyzer_format,
+            folder=analyzer_output_dir,
+            sparse=True,
+            overwrite=True,
+            **job_kwargs,
+        )
+
+        # Use the cached_recording for actual computation
+        sorting_analyzer.set_temporary_recording(cached_recording)
 
         # Don't re-compute any extensions that already exist. This prevents us
         # from recomputing expensive extensions if our previous job was
@@ -671,11 +676,9 @@ class PostProcessing(dj.Computed):
 
         # The preprocessed recording is a large, regenerable intermediate that only the
         # sorting reads, so reclaim it now.
-        possible_recording_dir = scratch_recording_dir(output_dir) / "recording"
-        for recording_dir in [possible_recording_dir, possible_recording_dir.with_suffix(".zarr")]:
-            if recording_dir.exists():
-                shutil.rmtree(recording_dir, ignore_errors=True)
-                logger.info(f"Deleted {recording_dir} after sorting.")
+        for recording_dir in scratch_recording_dir(output_dir).glob("recording*"):
+            shutil.rmtree(recording_dir, ignore_errors=True)
+            logger.info(f"Deleted {recording_dir} after post-processing.")
 
 
 @schema
