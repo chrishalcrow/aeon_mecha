@@ -130,7 +130,7 @@ def insert_bad_channels_into_pipeline(si_pipeline, electrodes_df, recording):
     `ephys.ElectrodeConfig.Electrode.label`. In this function, we intercept
     the SpikeInterface bad channels steps to supply them with this information.
     """
-    for pp_name, pp_kwargs in si_pipeline:
+    for pp_name, pp_kwargs in si_pipeline.items():
         if pp_name in ["detect_and_interpolate_bad_channels", "detect_and_remove_bad_channels"]:
             bad_channel_indices = electrodes_df.query('label == "bad"')["channel_idx"]
             bad_channel_ids = recording.channel_ids[bad_channel_indices]
