@@ -80,6 +80,8 @@ class ElectrodeConfig(dj.Lookup):
         definition = """  # Electrodes used for recording
         -> master
         -> ProbeType.Electrode
+        ---
+        label='': varchar(16) # remove this electrode from analysis if label = "bad"
         """
 
 
@@ -618,8 +620,6 @@ class EphysChunk(dj.Manual):
 
             if ephys_file.suffix == ".arrow":
                 from pyarrow import ArrowInvalid
-
-                from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
 
                 try:
                     # todo: remove `num_channels` if it becomes optional
